@@ -99,30 +99,6 @@ def h_gesture(angle_list):
             gesture_str = "four"
     return gesture_str
 
-# 计算两个向量的夹角
-def get_angle(v1, v2):
-    """
-    计算两个向量之间的夹角
-    返回值为弧度
-    """
-    v1_norm = np.linalg.norm(v1)
-    v2_norm = np.linalg.norm(v2)
-    
-    if v1_norm == 0 or v2_norm == 0:
-        return 0
-    
-    dot_product = np.dot(v1, v2)
-    cos_angle = dot_product / (v1_norm * v2_norm)
-    # 确保cos_angle在有效范围内
-    cos_angle = np.clip(cos_angle, -1.0, 1.0)
-    angle = np.arccos(cos_angle)
-    
-    # 判断夹角方向（正负）
-    cross_product = np.cross(v1, v2)
-    if cross_product < 0:
-        angle = -angle
-    
-    return angle
 
 # 从姿态检测结果提取关键点
 def extract_keypoints(results):
@@ -149,38 +125,53 @@ def get_pos(keypoints):
     str_pose = ""
     # 计算左臂与水平方向的夹角
     keypoints = np.array(keypoints)
-    v1 = keypoints[12][:2] - keypoints[11][:2]  # 只使用x,y坐标
-    v2 = keypoints[13][:2] - keypoints[11][:2]
-    angle_left_arm = get_angle(v1, v2)
+
+    angle_left_arm = vector_2d_angle(
+        (keypoints[12][0] - keypoints[11][0] ,keypoints[12][1] - keypoints[11][1]),
+        (keypoints[13][0] - keypoints[11][0] ,keypoints[13][1] - keypoints[11][1])
+    )
     
-    # 计算右臂与水平方向的夹角
-    v1 = keypoints[11][:2] - keypoints[12][:2]
-    v2 = keypoints[14][:2] - keypoints[12][:2]
-    angle_right_arm = get_angle(v1, v2)
+
+    angle_right_arm  = vector_2d_angle(
+        (keypoints[12][0] - keypoints[11][0] ,keypoints[12][1] - keypoints[11][1]),
+        (keypoints[14][0] - keypoints[12][0] ,keypoints[14][1] - keypoints[12][1])
+    )
     
-    # 计算左肘的夹角
-    v1 = keypoints[11][:2] - keypoints[13][:2]
-    v2 = keypoints[15][:2] - keypoints[13][:2]
-    angle_left_elbow = get_angle(v1, v2)
+    angle_left_elbow = vector_2d_angle(
+        (keypoints[11][0] - keypoints[13][0] ,keypoints[11][1] - keypoints[13][1]),
+        (keypoints[13][0] - keypoints[15][0] ,keypoints[13][1] - keypoints[15][1])
+    )
     
-    # 计算右肘的夹角
-    v1 = keypoints[12][:2] - keypoints[14][:2]
-    v2 = keypoints[16][:2] - keypoints[14][:2]
-    angle_right_elbow = get_angle(v1, v2)
+    angle_right_elbow = vector_2d_angle(
+        (keypoints[12][0] - keypoints[14][0] ,keypoints[12][1] - keypoints[14][1]),
+        (keypoints[14][0] - keypoints[16][0] ,keypoints[14][1] - keypoints[16][1])
+    )
     
-    # 判断姿态
-    if angle_left_arm < 0 and angle_right_arm < 0:
-        str_pose = "LEFT_UP"  # LEFT_UP
-    elif angle_left_arm > 0 and angle_right_arm > 0:
-        str_pose = "RIGHT_UP"  # RIGHT_UP
-    elif angle_left_arm < 0 and angle_right_arm > 0:
-        str_pose = "ALL_HANDS_UP"  # ALL_HANDS_UP
-        if abs(angle_left_elbow) < 120 * np.pi/180 and abs(angle_right_elbow) < 120 * np.pi/180:
-            str_pose = "TRIANGLE"  # TRIANGLE
-    elif angle_left_arm > 0 and angle_right_arm < 0:
-        str_pose = "NORMAL"  # NORMAL
-        if abs(angle_left_elbow) < 120 * np.pi/180 and abs(angle_right_elbow) < 120 * np.pi/180:
-            str_pose = "AKIMBO"  # AKIMBO
+# 判断姿态
+    # First, check whether arms are raised by comparing y-coordinates
+    left_shoulder_y = keypoints[11][1]
+    right_shoulder_y = keypoints[12][1]
+    left_wrist_y = keypoints[15][1]
+    right_wrist_y = keypoints[16][1]
+    
+    left_arm_raised = left_wrist_y < left_shoulder_y
+    right_arm_raised = right_wrist_y < right_shoulder_y
+    
+    # Now determine the pose based on arm positions and angles
+    if left_arm_raised and not right_arm_raised:
+        str_pose = "RIGHT_UP"  # Right arm up (from camera perspective)
+    elif right_arm_raised and not left_arm_raised:
+        str_pose = "LEFT_UP"  # Left arm up (from camera perspective)
+    elif left_arm_raised and right_arm_raised:
+        str_pose = "ALL_HANDS_UP"  # Both arms up
+        # Check if arms are bent to form triangle
+        if angle_left_elbow < 130 and angle_right_elbow < 130:
+            str_pose = "TRIANGLE"  # Arms bent forming triangle
+    else:
+        str_pose = "NORMAL"  # Arms down or neutral position
+        # Check if hands are on hips (akimbo)
+        # if angle_left_elbow < 100 and angle_right_elbow < 100:
+        #     str_pose = "AKIMBO"  # Hands on hips
     
     return str_pose
 
